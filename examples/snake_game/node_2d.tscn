@@ -1,0 +1,16 @@
+[gd_scene load_steps=3 format=3 uid="uid://bu0lw84um6em7"]
+
+[ext_resource type="Script" path="res://addons/compute_shader_studio/compute_shader_studio_2d.gd" id="1_6vi8v"]
+[ext_resource type="Texture2D" uid="uid://demftcowdd5c6" path="res://examples/icon.svg" id="2_macjy"]
+
+[node name="Node2D" type="Node2D"]
+
+[node name="ComputeShaderStudio2D" type="Node" parent="." node_paths=PackedStringArray("data")]
+script = ExtResource("1_6vi8v")
+glsl_file = "res://examples/snake_game/snake_game.cpp"
+data = [NodePath("../Icon")]
+
+[node name="Icon" type="Sprite2D" parent="."]
+position = Vector2(302, 273)
+scale = Vector2(4.625, 4.16406)
+texture = ExtResource("2_macjy")
