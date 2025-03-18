@@ -11,6 +11,6 @@ glsl_file = "res://examples/snake_game/snake_game.cpp"
 data = [NodePath("../Icon")]
 
 [node name="Icon" type="Sprite2D" parent="."]
-position = Vector2(302, 273)
-scale = Vector2(4.625, 4.16406)
+position = Vector2(559, 309)
+scale = Vector2(7.91406, 4.55859)
 texture = ExtResource("2_macjy")

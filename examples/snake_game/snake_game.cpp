@@ -7,13 +7,17 @@
 #define PI 3.141592
 #define TWO_PI (2.0*3.141592)
 
+// User parameters
+float u_zoom = 1.0f;
+float u_pos_x = 0.0f;
+float u_pos_y = 0.0f;
+
 // Color definitions
 #define COLOR_BACKGROUND vec3(0.1, 0.1, 0.1)
 #define COLOR_NODE vec3(0.5, 0.5, 0.5)
 #define COLOR_START vec3(1.0, 0.0, 0.0) // Red point for start
 #define COLOR_TARGET vec3(1.0, 1.0, 1.0) // White point for target
 #define COLOR_PATH vec3(0.0, 1.0, 0.0) // Green path
-#define COLOR_VISITED vec3(0.0, 0.6, 0.9) // Blue for visited nodes
 
 // Node structure
 struct Node {
@@ -25,7 +29,7 @@ struct Node {
     int parent;
 };
 
-// Node data
+// Node data (would normally be passed via a buffer)
 Node nodes[MAX_NODES];
 int node_count = 0;
 int start_node = -1;
@@ -45,15 +49,15 @@ int rgb_to_int(vec3 c) {
 // Converts screen coordinates to world coordinates
 vec2 screen_to_world(vec2 screen) {
     vec2 wsize = vec2(WSX, WSY);
-    vec2 center = vec2(0.0, 0.0);
-    return center + (screen / wsize - 0.5) * 4.0;
+    vec2 center = vec2(u_pos_x, u_pos_y);
+    return center + (screen / wsize - 0.5) * 4.0 / u_zoom;
 }
 
 // Converts world coordinates to screen coordinates
 vec2 world_to_screen(vec2 world) {
     vec2 wsize = vec2(WSX, WSY);
-    vec2 center = vec2(0.0, 0.0);
-    return ((world - center) / 4.0 + 0.5) * wsize;
+    vec2 center = vec2(u_pos_x, u_pos_y);
+    return ((world - center) * u_zoom / 4.0 + 0.5) * wsize;
 }
 
 // Finds the unvisited node with minimum distance
@@ -166,10 +170,9 @@ void init_graph() {
     reconstruct_path();
 }
 
-// Draws a line between two positions
-vec3 draw_line(vec2 screen_pos, vec2 start_pos, vec2 end_pos, float thickness, vec3 color) {
+// Draws an animated line between two positions with flowing effect
+vec3 draw_animated_line(vec2 screen_pos, vec2 start_pos, vec2 end_pos, float thickness) {
     vec2 line_dir = normalize(end_pos - start_pos);
-    vec2 normal = vec2(-line_dir.y, line_dir.x);
     
     // Project point onto line
     float t = dot(screen_pos - start_pos, line_dir);
@@ -180,69 +183,45 @@ vec3 draw_line(vec2 screen_pos, vec2 start_pos, vec2 end_pos, float thickness, v
     float dist = length(screen_pos - projected);
     
     if (dist < thickness) {
-        return color;
-    }
-    
-    return vec3(0.0);
-}
-
-// Draws an animated line between two positions with glowing flow effect
-vec3 draw_animated_path(vec2 screen_pos, vec2 start_pos, vec2 end_pos, float thickness, float time_offset) {
-    vec2 line_dir = normalize(end_pos - start_pos);
-    vec2 normal = vec2(-line_dir.y, line_dir.x);
-    
-    // Project point onto line
-    float t = dot(screen_pos - start_pos, line_dir);
-    float line_length = length(end_pos - start_pos);
-    
-    // Distance from point to line
-    vec2 projected = start_pos + clamp(t, 0.0, line_length) * line_dir;
-    float dist = length(screen_pos - projected);
-    
-    // Animate path (flow effect) using the step variable
-    if (dist < thickness) {
-        // Base color of the path
+        // Animation using step as time variable for flowing effect
+        float time = float(step) * 0.05;
+        float flow_pos = fract((t / line_length) - time);
+        float intensity = smoothstep(0.0, 0.2, flow_pos) * smoothstep(1.0, 0.8, flow_pos) * 1.2;
+        
+        // Base path color (green)
         vec3 base_color = COLOR_PATH;
+        // Highlight color (brighter green-yellow)
+        vec3 highlight_color = vec3(0.5, 1.0, 0.0);
         
-        // Create a moving pulse effect that travels along the path
-        float pulse_pos = fract((t / line_length) - time_offset * 0.3);
-        float pulse = smoothstep(0.0, 0.1, pulse_pos) * smoothstep(0.4, 0.3, pulse_pos) * 1.5;
-        
-        // Make the path glow where the pulse is
-        return mix(base_color, base_color * 2.5, pulse);
+        // Create flowing pulse effect along the path
+        return mix(base_color, highlight_color, intensity);
     }
     
     return vec3(0.0);
 }
 
 // Draws a node at a given position
-vec3 draw_node(vec2 screen_pos, vec2 node_pos, float radius, vec3 color, float pulse) {
+vec3 draw_node(vec2 screen_pos, vec2 node_pos, float radius, vec3 color) {
     float dist = length(screen_pos - node_pos);
-    float r = radius * (1.0 + pulse * 0.3);
     
-    if (dist < r) {
+    if (dist < radius) {
         // Smooth edge transition
-        float alpha = smoothstep(r, r - 1.0, dist);
-        return mix(vec3(0.0), color * (1.0 + pulse * 0.3), alpha);
+        float alpha = smoothstep(radius, radius - 1.0, dist);
+        return mix(vec3(0.0), color, alpha);
     }
     
     return vec3(0.0);
 }
 
 void main() {
-    uint x = gl_GlobalInvocationID.x;
-    uint y = gl_GlobalInvocationID.y;
-    uint p = x + y * WSX;
-    vec2 screen_pos = vec2(x, y);
+    uint p = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * WSX;
+    vec2 screen_pos = vec2(gl_GlobalInvocationID.xy);
     vec2 world_pos = screen_to_world(screen_pos);
     
     // Initialize graph if not already done
     if (node_count == 0) {
         init_graph();
     }
-    
-    // Use step for animation timing
-    float time = float(step) * 0.05;
     
     // Background color
     vec3 color = COLOR_BACKGROUND;
@@ -256,60 +235,60 @@ void main() {
             vec2 neighbor_screen_pos = world_to_screen(nodes[neighbor].position);
             
             // Draw thin line between nodes
-            vec3 line_color = draw_line(screen_pos, node_screen_pos, neighbor_screen_pos, 0.5, vec3(0.2, 0.2, 0.2));
-            color = max(color, line_color);
-        }
-    }
-    
-    // Draw visited nodes with static color (no animation)
-    for (int i = 0; i < node_count; i++) {
-        if (nodes[i].visited && i != start_node && i != target_node) {
-            vec2 node_screen_pos = world_to_screen(nodes[i].position);
+            vec2 line_dir = normalize(neighbor_screen_pos - node_screen_pos);
+            float t = dot(screen_pos - node_screen_pos, line_dir);
+            float line_length = length(neighbor_screen_pos - node_screen_pos);
+            vec2 projected = node_screen_pos + clamp(t, 0.0, line_length) * line_dir;
+            float dist = length(screen_pos - projected);
             
-            // No pulse effect, just static nodes
-            vec3 node_drawn = draw_node(screen_pos, node_screen_pos, 4.0, COLOR_VISITED, 0.0);
-            color = max(color, node_drawn);
+            if (dist < 0.5) {
+                color = max(color, vec3(0.3, 0.3, 0.3)); // Gray connections
+            }
         }
     }
     
-    // Draw the path with animated flowing effect
+    // Draw the found path
     if (path_found) {
-        // We'll draw the path in segments with animation flowing through
         for (int i = 0; i < path_length - 1; i++) {
             vec2 path_screen_pos = world_to_screen(nodes[path[i]].position);
             vec2 next_screen_pos = world_to_screen(nodes[path[i+1]].position);
             
-            // Offset the animation for each segment to create a flowing effect
-            float segment_offset = time + float(i) * 0.2;
-            
-            vec3 path_color = draw_animated_path(screen_pos, path_screen_pos, next_screen_pos, 2.0, segment_offset);
+            // Draw thick animated line for path
+            vec3 path_color = draw_animated_line(screen_pos, path_screen_pos, next_screen_pos, 2.0);
             color = max(color, path_color);
         }
     }
     
-    // Draw all nodes
+    // Draw nodes
     for (int i = 0; i < node_count; i++) {
         vec2 node_screen_pos = world_to_screen(nodes[i].position);
         
-        // Node color without pulse effect
+        // Node color based on type
         vec3 node_color = COLOR_NODE;
-        float pulse = 0.0; // No pulse for any nodes
-        float node_size = 5.0;
-        
         if (i == start_node) {
             node_color = COLOR_START;
-            node_size = 8.0;
         } else if (i == target_node) {
             node_color = COLOR_TARGET;
-            node_size = 8.0;
         }
         
-        vec3 node_drawn = draw_node(screen_pos, node_screen_pos, node_size, node_color, pulse);
+        // Draw node
+        vec3 node_drawn = draw_node(screen_pos, node_screen_pos, 5.0, node_color);
         color = max(color, node_drawn);
     }
     
+    // Make start and target nodes slightly larger to highlight them
+    vec2 start_screen_pos = world_to_screen(nodes[start_node].position);
+    vec2 target_screen_pos = world_to_screen(nodes[target_node].position);
+    
+    vec3 start_drawn = draw_node(screen_pos, start_screen_pos, 8.0, COLOR_START);
+    vec3 target_drawn = draw_node(screen_pos, target_screen_pos, 8.0, COLOR_TARGET);
+    
+    color = max(color, start_drawn);
+    color = max(color, target_drawn);
+    
     // Show cursor position
-    if ((mousex >= 0 && x == mousex) || (mousey >= 0 && y == mousey)) {
+    if ((mousex >= 0 && gl_GlobalInvocationID.x == mousex) || 
+        (mousey >= 0 && gl_GlobalInvocationID.y == mousey)) {
         color = vec3(0.7, 0.7, 0.7);
     }
     
